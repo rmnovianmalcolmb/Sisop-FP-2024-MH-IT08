@@ -328,7 +328,6 @@ void handle_create_channel(int client_socket, char *channel, char *key) {
     write(client_socket, response, strlen(response));
 }
 
-
 void handle_edit_channel(int client_socket, char *old_channel, char *new_channel) {
     FILE *file = fopen("channels.csv", "r");
     if (!file) {
@@ -391,6 +390,18 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         }
         if (rename(temp_path, "channels.csv") != 0) {
             char response[] = "Error: Could not rename temporary file\n";
+            write(client_socket, response, strlen(response));
+            return;
+        }
+
+        // Rename the directory
+        char old_channel_path[256];
+        char new_channel_path[256];
+        snprintf(old_channel_path, sizeof(old_channel_path), "%s", old_channel);
+        snprintf(new_channel_path, sizeof(new_channel_path), "%s", new_channel);
+
+        if (rename(old_channel_path, new_channel_path) != 0) {
+            char response[] = "Error: Could not rename channel directory\n";
             write(client_socket, response, strlen(response));
             return;
         }
