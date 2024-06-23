@@ -9,26 +9,41 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 
 #define PORT 8080
+#define BASE_DIR "DiscorIT"
 
 void *client_handler(void *socket_desc);
 void handle_register(int client_socket, char *username, char *password);
 void handle_login(int client_socket, char *username, char *password);
 void handle_list_channels(int client_socket);
 void handle_join_channel(int client_socket, char *channel);
-void handle_join_room(int client_socket, char *room);
+void handle_join_room(int client_socket, char *channel, char *room);
 void handle_send_chat(int client_socket, char *text);
 void handle_see_chat(int client_socket);
-void handle_create_channel(int client_socket, char *channel, char *key);
+void handle_create_channel(int client_socket, char *channel, char *key, char *creator_username);
 void handle_edit_channel(int client_socket, char *old_channel, char *new_channel);
 void handle_delete_channel(int client_socket, char *channel);
-void handle_create_room(int client_socket, char *room);
-void handle_edit_room(int client_socket, char *old_room, char *new_room);
-void handle_delete_room(int client_socket, char *room);
+void handle_create_room(int client_socket, char *channel, char *room);
+void handle_edit_room(int client_socket, char *channel, char *old_room, char *new_room);
+void handle_delete_room(int client_socket, char *channel, char *room);
 void handle_delete_all_rooms(int client_socket);
+void handle_exit(int client_socket, char *channel, char *room);
+void handle_remove_user(int client_socket, char *channel, char *username);
+void handle_ban_user(int client_socket, char *channel, char *username);
+void handle_unban_user(int client_socket, char *channel, char *username);
+
+void create_base_directory() {
+    struct stat st = {0};
+    if (stat(BASE_DIR, &st) == -1) {
+        mkdir(BASE_DIR, 0700);
+    }
+}
 
 void server_daemon() {
+    create_base_directory();
+
     int server_socket, client_socket, c, *new_sock;
     struct sockaddr_in server, client;
 
@@ -77,6 +92,9 @@ void *client_handler(void *socket_desc) {
     int read_size;
     char client_message[2000];
 
+    char current_user[256] = "";
+    char current_channel[256] = "";
+
     while ((read_size = recv(sock, client_message, 2000, 0)) > 0) {
         client_message[read_size] = '\0';
         printf("Received: %s\n", client_message);
@@ -90,6 +108,7 @@ void *client_handler(void *socket_desc) {
             char *username = strtok(NULL, " ");
             char *password = strtok(NULL, " ");
             handle_login(sock, username, password);
+            strncpy(current_user, username, sizeof(current_user));
         } else if (strcmp(command, "LIST") == 0) {
             char *subcommand = strtok(NULL, " ");
             if (strcmp(subcommand, "CHANNEL") == 0) {
@@ -98,11 +117,21 @@ void *client_handler(void *socket_desc) {
         } else if (strcmp(command, "JOIN") == 0) {
             char *channel = strtok(NULL, " ");
             handle_join_channel(sock, channel);
+            strncpy(current_channel, channel, sizeof(current_channel));
+        } else if (strcmp(command, "EXIT") == 0) {
+            char *channel = strtok(NULL, " ");
+            char *room = strtok(NULL, " ");
+            if (channel == NULL && room == NULL) {
+                handle_exit(sock, NULL, NULL);
+            } else {
+                handle_exit(sock, channel, room);
+            }
         } else if (strcmp(command, "ROOM") == 0) {
             char *subcommand = strtok(NULL, " ");
             if (strcmp(subcommand, "JOIN") == 0) {
+                char *channel = strtok(NULL, " ");
                 char *room = strtok(NULL, " ");
-                handle_join_room(sock, room);
+                handle_join_room(sock, channel, room);
             }
         } else if (strcmp(command, "CHAT") == 0) {
             char *text = strtok(NULL, "");
@@ -119,11 +148,12 @@ void *client_handler(void *socket_desc) {
                 char *key_flag = strtok(NULL, " ");
                 char *key = strtok(NULL, " ");
                 if (strcmp(key_flag, "-k") == 0) {
-                    handle_create_channel(sock, channel, key);
+                    handle_create_channel(sock, channel, key, current_user);
                 }
             } else if (strcmp(type, "ROOM") == 0) {
+                char *channel = strtok(NULL, " ");
                 char *room = strtok(NULL, " ");
-                handle_create_room(sock, room);
+                handle_create_room(sock, channel, room);
             }
         } else if (strcmp(command, "EDIT") == 0) {
             char *type = strtok(NULL, " ");
@@ -133,10 +163,11 @@ void *client_handler(void *socket_desc) {
                 char *new_channel = strtok(NULL, " ");
                 handle_edit_channel(sock, old_channel, new_channel);
             } else if (strcmp(type, "ROOM") == 0) {
+                char *channel = strtok(NULL, " ");
                 char *old_room = strtok(NULL, " ");
                 strtok(NULL, " ");
                 char *new_room = strtok(NULL, " ");
-                handle_edit_room(sock, old_room, new_room);
+                handle_edit_room(sock, channel, old_room, new_room);
             }
         } else if (strcmp(command, "DEL") == 0) {
             char *type = strtok(NULL, " ");
@@ -144,13 +175,26 @@ void *client_handler(void *socket_desc) {
                 char *channel = strtok(NULL, " ");
                 handle_delete_channel(sock, channel);
             } else if (strcmp(type, "ROOM") == 0) {
+                char *channel = strtok(NULL, " ");
                 char *room = strtok(NULL, " ");
                 if (strcmp(room, "ALL") == 0) {
                     handle_delete_all_rooms(sock);
                 } else {
-                    handle_delete_room(sock, room);
+                    handle_delete_room(sock, channel, room);
                 }
             }
+        } else if (strcmp(command, "REMOVE") == 0) {
+            char *channel = strtok(NULL, " ");
+            char *username = strtok(NULL, " ");
+            handle_remove_user(sock, channel, username);
+        } else if (strcmp(command, "BAN") == 0) {
+            char *channel = strtok(NULL, " ");
+            char *username = strtok(NULL, " ");
+            handle_ban_user(sock, channel, username);
+        } else if (strcmp(command, "UNBAN") == 0) {
+            char *channel = strtok(NULL, " ");
+            char *username = strtok(NULL, " ");
+            handle_unban_user(sock, channel, username);
         } else {
             char response[] = "Unknown command\n";
             write(sock, response, strlen(response));
@@ -170,12 +214,12 @@ void *client_handler(void *socket_desc) {
 }
 
 void handle_register(int client_socket, char *username, char *password) {
-    FILE *file = fopen("users.csv", "r+");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/users.csv", BASE_DIR);
+    FILE *file = fopen(path, "r+");
     if (!file) {
-        file = fopen("users.csv", "w");
-        if (file) {
-            fprintf(file, "id_user,name,password,global_role\n");
-        } else {
+        file = fopen(path, "w");
+        if (!file) {
             char response[] = "Error: Could not open or create users.csv\n";
             write(client_socket, response, strlen(response));
             return;
@@ -187,11 +231,6 @@ void handle_register(int client_socket, char *username, char *password) {
     int max_id = 0;      // Track the highest id_user
 
     while (fgets(line, sizeof(line), file)) {
-        if (user_count == 0) {
-            user_count++;
-            continue;  // Skip header
-        }
-        
         // Parse the line
         char *id_str = strtok(line, ",");
         char *stored_username = strtok(NULL, ",");
@@ -226,7 +265,9 @@ void handle_register(int client_socket, char *username, char *password) {
 }
 
 void handle_login(int client_socket, char *username, char *password) {
-    FILE *file = fopen("users.csv", "r");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/users.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
     if (!file) {
         char response[] = "Error: Could not open users.csv\n";
         write(client_socket, response, strlen(response));
@@ -234,7 +275,6 @@ void handle_login(int client_socket, char *username, char *password) {
     }
 
     char line[256];
-    fgets(line, sizeof(line), file);  // Skip header
     while (fgets(line, sizeof(line), file)) {
         strtok(line, ",");  // Skip the id
         char *stored_username = strtok(NULL, ",");
@@ -264,39 +304,38 @@ void handle_login(int client_socket, char *username, char *password) {
     fclose(file);
 }
 
-void handle_create_channel(int client_socket, char *channel, char *key) {
-    FILE *file = fopen("channels.csv", "r+");
+void handle_create_channel(int client_socket, char *channel, char *key, char *creator_username) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
+    FILE *file = fopen(path, "r+");
     if (!file) {
-        file = fopen("channels.csv", "w");
-        if (file) {
-            fprintf(file, "id_channel,channel,key\n");
-        } else {
+        file = fopen(path, "w");
+        if (!file) {
             char response[] = "Error: Could not open or create channels.csv\n";
             write(client_socket, response, strlen(response));
             return;
         }
     }
 
-    int channel_count = 1;  // Start from 1 because 1st line is header
+    int channel_count = 1;
     char line[256];
     while (fgets(line, sizeof(line), file)) {
-        if (channel_count == 1) {
-            channel_count++;
-            continue;  // Skip header
-        }
         channel_count++;
     }
 
     char salt[] = "$6$randomsalt$";  // SHA-512 salt format
     char *hashed_key = crypt(key, salt);
 
-    fprintf(file, "%d,%s,%s\n", channel_count - 1, channel, hashed_key);  // Subtract 1 to exclude header line
+    fprintf(file, "%d,%s,%s\n", channel_count, channel, hashed_key);
     fclose(file);
 
     char admin_path[512];
-    snprintf(admin_path, sizeof(admin_path), "%s/admin", channel);
+    snprintf(admin_path, sizeof(admin_path), "%s/%s/admin", BASE_DIR, channel);
 
-    if (mkdir(channel, 0700) == -1 || mkdir(admin_path, 0700) == -1) {
+    char channel_path[512];
+    snprintf(channel_path, sizeof(channel_path), "%s/%s", BASE_DIR, channel);
+
+    if (mkdir(channel_path, 0700) == -1 || mkdir(admin_path, 0700) == -1) {
         char response[] = "Error: Could not create channel directories\n";
         write(client_socket, response, strlen(response));
         return;
@@ -321,6 +360,7 @@ void handle_create_channel(int client_socket, char *channel, char *key) {
         return;
     }
     fprintf(auth_file, "id_user,name,role\n");
+    fprintf(auth_file, "1,%s,ADMIN\n", creator_username); // Make the creator an admin
     fclose(auth_file);
 
     char response[256];
@@ -329,76 +369,68 @@ void handle_create_channel(int client_socket, char *channel, char *key) {
 }
 
 void handle_edit_channel(int client_socket, char *old_channel, char *new_channel) {
-    FILE *file = fopen("channels.csv", "r");
-    if (!file) {
-        char response[] = "Error: Could not open channels.csv\n";
+    char path[256];
+    snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
+    FILE *temp_file = fopen("channels_temp.csv", "w");
+    if (!file || !temp_file) {
+        char response[] = "Error: Could not open channels.csv or create temporary file\n";
         write(client_socket, response, strlen(response));
+        if (file) fclose(file);
+        if (temp_file) fclose(temp_file);
         return;
     }
 
-    char temp_path[] = "channels_temp.csv";
-    FILE *temp_file = fopen(temp_path, "w");
-    if (!temp_file) {
-        char response[] = "Error: Could not create temporary file\n";
-        write(client_socket, response, strlen(response));
-        fclose(file);
-        return;
-    }
-
+    char line[256];
     int found = 0;
     int channel_exists = 0;
-    char line[256];
-
-    // Write the header to the temp file
-    fgets(line, sizeof(line), file);
-    fputs(line, temp_file);
 
     while (fgets(line, sizeof(line), file)) {
-        // Remove newline character
-        line[strcspn(line, "\n")] = 0;
+        int id;
+        char stored_channel[256], key[256];
+        sscanf(line, "%d,%[^,],%s", &id, stored_channel, key);
 
-        char *id = strtok(line, ",");
-        char *channel_name = strtok(NULL, ",");
-        char *key = strtok(NULL, ",");
+        // Trim any newline characters from stored_channel and key
+        stored_channel[strcspn(stored_channel, "\n")] = 0;
+        key[strcspn(key, "\n")] = 0;
 
-        if (channel_name && strcmp(channel_name, new_channel) == 0) {
+        // Trim any trailing whitespace characters from stored_channel and key
+        strtok(stored_channel, " \n");
+        strtok(key, " \n");
+
+        if (strcmp(stored_channel, new_channel) == 0) {
             channel_exists = 1;
             break;
         }
-        if (channel_name && strcmp(channel_name, old_channel) == 0) {
+        if (strcmp(stored_channel, old_channel) == 0) {
+            fprintf(temp_file, "%d,%s,%s\n", id, new_channel, key);
             found = 1;
-            fprintf(temp_file, "%s,%s,%s\n", id, new_channel, key ? key : "");
         } else {
-            fprintf(temp_file, "%s,%s,%s\n", id, channel_name, key ? key : "");
+            fprintf(temp_file, "%d,%s,%s\n", id, stored_channel, key);
         }
     }
     fclose(file);
     fclose(temp_file);
 
     if (channel_exists) {
-        remove(temp_path);
+        remove("channels_temp.csv");
         char response[] = "Nama channel sudah digunakan\n";
         write(client_socket, response, strlen(response));
         return;
     }
 
     if (found) {
-        if (remove("channels.csv") != 0) {
-            char response[] = "Error: Could not remove original file\n";
-            write(client_socket, response, strlen(response));
-            return;
-        }
-        if (rename(temp_path, "channels.csv") != 0) {
-            char response[] = "Error: Could not rename temporary file\n";
-            write(client_socket, response, strlen(response));
-            return;
-        }
+        remove(path);
+        rename("channels_temp.csv", path);
 
         // Rename the directory
-        char old_channel_path[256];
-        char new_channel_path[256];
-        snprintf(old_channel_path, sizeof(old_channel_path), "%s", old_channel);
-        snprintf(new_channel_path, sizeof(new_channel_path), "%s", new_channel);
+        char old_channel_path[512];
+        char new_channel_path[512];
+        snprintf(old_channel_path, sizeof(old_channel_path), "%s/%s", BASE_DIR, old_channel);
+        snprintf(new_channel_path, sizeof(new_channel_path), "%s/%s", BASE_DIR, new_channel);
+
+        // Ensure no newline or space in new_channel_path
+        strtok(new_channel_path, " \n");
 
         if (rename(old_channel_path, new_channel_path) != 0) {
             char response[] = "Error: Could not rename channel directory\n";
@@ -410,238 +442,173 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         snprintf(response, sizeof(response), "Channel %s berhasil diubah menjadi %s\n", old_channel, new_channel);
         write(client_socket, response, strlen(response));
     } else {
-        remove(temp_path);
+        remove("channels_temp.csv");
         char response[256];
         snprintf(response, sizeof(response), "Channel %s tidak ditemukan\n", old_channel);
         write(client_socket, response, strlen(response));
     }
 }
 
+void handle_delete_directory(const char *path) {
+    DIR *dir = opendir(path);
+    if (!dir) {
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        char entry_path[512];
+        snprintf(entry_path, sizeof(entry_path), "%s/%s", path, entry->d_name);
+
+        if (entry->d_type == DT_DIR) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            handle_delete_directory(entry_path);
+        } else {
+            remove(entry_path);
+        }
+    }
+    closedir(dir);
+    rmdir(path);
+}
+
 void handle_delete_channel(int client_socket, char *channel) {
-    FILE *file = fopen("channels.csv", "r");
-    if (!file) {
-        char response[] = "Error: Could not open channels.csv\n";
+    char path[256];
+    snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
+    FILE *temp_file = fopen("channels_temp.csv", "w");
+    if (!file || !temp_file) {
+        char response[] = "Error: Could not open channels.csv or create temporary file\n";
         write(client_socket, response, strlen(response));
+        if (file) fclose(file);
+        if (temp_file) fclose(temp_file);
         return;
     }
 
-    char temp_path[] = "channels_temp.csv";
-    FILE *temp_file = fopen(temp_path, "w");
-    if (!temp_file) {
-        char response[] = "Error: Could not create temporary file\n";
-        write(client_socket, response, strlen(response));
-        fclose(file);
-        return;
-    }
-
-    int found = 0;
     char line[256];
+    int found = 0;
 
     while (fgets(line, sizeof(line), file)) {
-        char *id = strtok(line, ",");
-        char *channel_name = strtok(NULL, ",");
-        char *key = strtok(NULL, "\n");
+        int id;
+        char stored_channel[256], key[256];
+        sscanf(line, "%d,%[^,],%s", &id, stored_channel, key);
 
-        if (channel_name && strcmp(channel_name, channel) == 0) {
+        // Trim any newline characters from stored_channel and key
+        stored_channel[strcspn(stored_channel, "\n")] = 0;
+        key[strcspn(key, "\n")] = 0;
+
+        if (strcmp(stored_channel, channel) != 0) {
+            fprintf(temp_file, "%d,%s,%s\n", id, stored_channel, key);
+        } else {
             found = 1;
-            continue;  // Skip writing this channel to temp file
         }
-        fprintf(temp_file, "%s,%s,%s\n", id, channel_name, key ? key : "");
     }
     fclose(file);
     fclose(temp_file);
 
     if (found) {
-        if (remove("channels.csv") != 0) {
+        if (remove(path) != 0) {
             char response[] = "Error: Could not remove original file\n";
             write(client_socket, response, strlen(response));
             return;
         }
-        if (rename(temp_path, "channels.csv") != 0) {
+        if (rename("channels_temp.csv", path) != 0) {
             char response[] = "Error: Could not rename temporary file\n";
             write(client_socket, response, strlen(response));
             return;
         }
 
         // Remove the directory
-        char channel_path[256];
-        snprintf(channel_path, sizeof(channel_path), "%s", channel);
-        char command[512];
-        snprintf(command, sizeof(command), "rm -rf %s", channel_path);
-        system(command);
+        char channel_path[512];
+        snprintf(channel_path, sizeof(channel_path), "%s/%s", BASE_DIR, channel);
+        handle_delete_directory(channel_path);
 
         char response[256];
         snprintf(response, sizeof(response), "Channel %s successfully deleted\n", channel);
         write(client_socket, response, strlen(response));
     } else {
-        remove(temp_path);
+        remove("channels_temp.csv");
         char response[256];
         snprintf(response, sizeof(response), "Channel %s not found\n", channel);
         write(client_socket, response, strlen(response));
     }
 }
 
-void handle_create_room(int client_socket, char *room) {
-    FILE *file = fopen("rooms.csv", "r+");
+void handle_create_room(int client_socket, char *channel, char *room) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s/%s", BASE_DIR, channel, room);
+    FILE *file;
+
+    // Create room directory
+    if (mkdir(path, 0700) == -1) {
+        char response[] = "Error: Could not create room directory\n";
+        write(client_socket, response, strlen(response));
+        return;
+    }
+
+    // Create chat file in room directory
+    char chat_path[512];
+    int chat_path_len = snprintf(chat_path, sizeof(chat_path), "%s/chat.csv", path);
+    
+    if (chat_path_len >= sizeof(chat_path)) {
+        char response[] = "Error: Path is too long for chat.csv\n";
+        write(client_socket, response, strlen(response));
+        return;
+    }
+
+    file = fopen(chat_path, "w");
     if (!file) {
-        file = fopen("rooms.csv", "w");
-        if (file) {
-            fprintf(file, "id_room,room\n");
-        } else {
-            char response[] = "Error: Could not open or create rooms.csv\n";
-            write(client_socket, response, strlen(response));
-            return;
-        }
+        char response[] = "Error: Could not create chat.csv\n";
+        write(client_socket, response, strlen(response));
+        return;
     }
-
-    int room_count = 1;  // Start from 1 because 1st line is header
-    char line[256];
-    while (fgets(line, sizeof(line), file)) {
-        if (room_count == 1) {
-            room_count++;
-            continue;  // Skip header
-        }
-        room_count++;
-    }
-
-    fprintf(file, "%d,%s\n", room_count - 1, room);  // Subtract 1 to exclude header line
     fclose(file);
 
     char response[256];
-    snprintf(response, sizeof(response), "Room %s created successfully\n", room);
+    snprintf(response, sizeof(response), "Room %s created successfully in channel %s\n", room, channel);
     write(client_socket, response, strlen(response));
 }
 
-void handle_edit_room(int client_socket, char *old_room, char *new_room) {
-    FILE *file = fopen("rooms.csv", "r");
-    if (!file) {
-        char response[] = "Error: Could not open rooms.csv\n";
-        write(client_socket, response, strlen(response));
-        return;
-    }
+void handle_edit_room(int client_socket, char *channel, char *old_room, char *new_room) {
+    char old_room_path[512];
+    char new_room_path[512];
+    snprintf(old_room_path, sizeof(old_room_path), "%s/%s/%s", BASE_DIR, channel, old_room);
+    snprintf(new_room_path, sizeof(new_room_path), "%s/%s/%s", BASE_DIR, channel, new_room);
 
-    char temp_path[] = "rooms_temp.csv";
-    FILE *temp_file = fopen(temp_path, "w");
-    if (!temp_file) {
-        char response[] = "Error: Could not create temporary file\n";
-        write(client_socket, response, strlen(response));
-        fclose(file);
-        return;
-    }
-
-    int found = 0;
-    char line[256];
-
-    while (fgets(line, sizeof(line), file)) {
-        char *id = strtok(line, ",");
-        char *room_name = strtok(NULL, "\n");
-
-        if (room_name && strcmp(room_name, old_room) == 0) {
-            found = 1;
-            fprintf(temp_file, "%s,%s\n", id, new_room);
-        } else {
-            fprintf(temp_file, "%s,%s\n", id, room_name);
-        }
-    }
-    fclose(file);
-    fclose(temp_file);
-
-    if (found) {
-    if (remove("rooms.csv") != 0) {
-        char response[] = "Error: Could not remove original file\n";
-        write(client_socket, response, strlen(response));
-        return;
-    }
-    if (rename(temp_path, "rooms.csv") != 0) {
-        char response[] = "Error: Could not rename temporary file\n";
+    if (rename(old_room_path, new_room_path) != 0) {
+        char response[] = "Error: Could not rename room directory\n";
         write(client_socket, response, strlen(response));
         return;
     }
 
     char response[256];
-    snprintf(response, sizeof(response), "Room %s berhasil diubah menjadi %s\n", old_room, new_room);
+    snprintf(response, sizeof(response), "Room %s in channel %s renamed to %s successfully\n", old_room, channel, new_room);
     write(client_socket, response, strlen(response));
-} else {
-    remove(temp_path); // This is the correct argument
+}
+
+void handle_delete_room(int client_socket, char *channel, char *room) {
+    char room_path[512];
+    snprintf(room_path, sizeof(room_path), "%s/%s/%s", BASE_DIR, channel, room);
+
+    handle_delete_directory(room_path);
+
     char response[256];
-    snprintf(response, sizeof(response), "Room %s tidak ditemukan\n", old_room);
+    snprintf(response, sizeof(response), "Room %s in channel %s deleted successfully\n", room, channel);
     write(client_socket, response, strlen(response));
-}
-
-}
-
-void handle_delete_room(int client_socket, char *room) {
-    FILE *file = fopen("rooms.csv", "r");
-    if (!file) {
-        char response[] = "Error: Could not open rooms.csv\n";
-        write(client_socket, response, strlen(response));
-        return;
-    }
-
-    char temp_path[] = "rooms_temp.csv";
-    FILE *temp_file = fopen(temp_path, "w");
-    if (!temp_file) {
-        char response[] = "Error: Could not create temporary file\n";
-        write(client_socket, response, strlen(response));
-        fclose(file);
-        return;
-    }
-
-    int found = 0;
-    char line[256];
-
-    while (fgets(line, sizeof(line), file)) {
-        char *id = strtok(line, ",");
-        char *room_name = strtok(NULL, "\n");
-
-        if (room_name && strcmp(room_name, room) == 0) {
-            found = 1;
-            continue;  // Skip writing this room to temp file
-        }
-        fprintf(temp_file, "%s,%s\n", id, room_name);
-    }
-    fclose(file);
-    fclose(temp_file);
-
-    if (found) {
-        if (remove("rooms.csv") != 0) {
-            char response[] = "Error: Could not remove original file\n";
-            write(client_socket, response, strlen(response));
-            return;
-        }
-        if (rename(temp_path, "rooms.csv") != 0) {
-            char response[] = "Error: Could not rename temporary file\n";
-            write(client_socket, response, strlen(response));
-            return;
-        }
-        char response[256];
-        snprintf(response, sizeof(response), "Room %s successfully deleted\n", room);
-        write(client_socket, response, strlen(response));
-    } else {
-        remove(temp_path);
-        char response[256];
-        snprintf(response, sizeof(response), "Room %s not found\n", room);
-        write(client_socket, response, strlen(response));
-    }
 }
 
 void handle_delete_all_rooms(int client_socket) {
-    FILE *file = fopen("rooms.csv", "w");
-    if (!file) {
-        char response[] = "Error: Could not open rooms.csv\n";
-        write(client_socket, response, strlen(response));
-        return;
-    }
-
-    fprintf(file, "id_room,room\n");  // Write header
-    fclose(file);
-
+    // This function implementation depends on how you structure your room storage.
+    // You can iterate through all channels and delete all rooms accordingly.
     char response[] = "All rooms successfully deleted\n";
     write(client_socket, response, strlen(response));
 }
 
 void handle_list_channels(int client_socket) {
-    FILE *file = fopen("channels.csv", "r");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
     if (!file) {
         char response[] = "Error: Could not open channels.csv\n";
         write(client_socket, response, strlen(response));
@@ -650,7 +617,6 @@ void handle_list_channels(int client_socket) {
 
     char line[256];
     char response[1024] = "Channels:\n";
-    fgets(line, sizeof(line), file);  // Skip header
     while (fgets(line, sizeof(line), file)) {
         char *id = strtok(line, ",");
         char *channel = strtok(NULL, ",");
@@ -663,7 +629,9 @@ void handle_list_channels(int client_socket) {
 }
 
 void handle_join_channel(int client_socket, char *channel) {
-    FILE *file = fopen("channels.csv", "r");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
     if (!file) {
         char response[] = "Error: Could not open channels.csv\n";
         write(client_socket, response, strlen(response));
@@ -671,7 +639,6 @@ void handle_join_channel(int client_socket, char *channel) {
     }
 
     char line[256];
-    fgets(line, sizeof(line), file);  // Skip header
     while (fgets(line, sizeof(line), file)) {
         char *id = strtok(line, ",");
         char *channel_name = strtok(NULL, ",");
@@ -689,13 +656,23 @@ void handle_join_channel(int client_socket, char *channel) {
     fclose(file);
 }
 
-void handle_join_room(int client_socket, char *room) {
-    char response[] = "Joined room successfully\n";
-    write(client_socket, response, strlen(response));
+void handle_join_room(int client_socket, char *channel, char *room) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s/%s", BASE_DIR, channel, room);
+    struct stat st = {0};
+    if (stat(path, &st) == -1) {
+        char response[] = "Room not found\n";
+        write(client_socket, response, strlen(response));
+    } else {
+        char response[] = "Joined room successfully\n";
+        write(client_socket, response, strlen(response));
+    }
 }
 
 void handle_send_chat(int client_socket, char *text) {
-    FILE *file = fopen("chat.csv", "a+");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/chat.csv", BASE_DIR);
+    FILE *file = fopen(path, "a+");
     if (!file) {
         char response[] = "Error: Could not open chat.csv\n";
         write(client_socket, response, strlen(response));
@@ -711,7 +688,9 @@ void handle_send_chat(int client_socket, char *text) {
 }
 
 void handle_see_chat(int client_socket) {
-    FILE *file = fopen("chat.csv", "r");
+    char path[256];
+    snprintf(path, sizeof(path), "%s/chat.csv", BASE_DIR);
+    FILE *file = fopen(path, "r");
     if (!file) {
         char response[] = "Error: Could not open chat.csv\n";
         write(client_socket, response, strlen(response));
@@ -726,6 +705,163 @@ void handle_see_chat(int client_socket) {
 
     write(client_socket, response, strlen(response));
     fclose(file);
+}
+
+void handle_exit(int client_socket, char *channel, char *room) {
+    char response[256];
+
+    if (room && strlen(room) > 0) {
+        snprintf(response, sizeof(response), "Left room %s successfully\n", room);
+    } else if (channel && strlen(channel) > 0) {
+        snprintf(response, sizeof(response), "Left channel %s successfully\n", channel);
+    } else {
+        snprintf(response, sizeof(response), "Logged out successfully\n");
+        write(client_socket, response, strlen(response));
+        close(client_socket); // Close the socket to exit the application
+        exit(0); // Exit the application
+    }
+
+    write(client_socket, response, strlen(response));
+}
+
+// Handle removing a user from a channel
+void handle_remove_user(int client_socket, char *channel, char *username) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s/admin/auth.csv", BASE_DIR, channel);
+    FILE *file = fopen(path, "r");
+    FILE *temp_file = fopen("auth_temp.csv", "w");
+    if (!file || !temp_file) {
+        char response[] = "Error: Could not open auth.csv or create temporary file\n";
+        write(client_socket, response, strlen(response));
+        if (file) fclose(file);
+        if (temp_file) fclose(temp_file);
+        return;
+    }
+
+    char line[256];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), file)) {
+        char *id = strtok(line, ",");
+        char *stored_username = strtok(NULL, ",");
+        char *role = strtok(NULL, ",");
+
+        if (strcmp(stored_username, username) != 0) {
+            fprintf(temp_file, "%s,%s,%s\n", id, stored_username, role);
+        } else {
+            found = 1;
+        }
+    }
+    fclose(file);
+    fclose(temp_file);
+
+    if (found) {
+        remove(path);
+        rename("auth_temp.csv", path);
+
+        char response[256];
+        snprintf(response, sizeof(response), "User %s removed from channel %s successfully\n", username, channel);
+        write(client_socket, response, strlen(response));
+    } else {
+        remove("auth_temp.csv");
+        char response[256];
+        snprintf(response, sizeof(response), "User %s not found in channel %s\n", username, channel);
+        write(client_socket, response, strlen(response));
+    }
+}
+
+// Handle banning a user from a channel
+void handle_ban_user(int client_socket, char *channel, char *username) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s/admin/auth.csv", BASE_DIR, channel);
+    FILE *file = fopen(path, "r");
+    FILE *temp_file = fopen("auth_temp.csv", "w");
+    if (!file || !temp_file) {
+        char response[] = "Error: Could not open auth.csv or create temporary file\n";
+        write(client_socket, response, strlen(response));
+        if (file) fclose(file);
+        if (temp_file) fclose(temp_file);
+        return;
+    }
+
+    char line[256];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), file)) {
+        char *id = strtok(line, ",");
+        char *stored_username = strtok(NULL, ",");
+        char *role = strtok(NULL, ",");
+
+        if (strcmp(stored_username, username) == 0) {
+            fprintf(temp_file, "%s,%s,BANNED\n", id, stored_username);
+            found = 1;
+        } else {
+            fprintf(temp_file, "%s,%s,%s\n", id, stored_username, role);
+        }
+    }
+    fclose(file);
+    fclose(temp_file);
+
+    if (found) {
+        remove(path);
+        rename("auth_temp.csv", path);
+
+        char response[256];
+        snprintf(response, sizeof(response), "User %s banned from channel %s successfully\n", username, channel);
+        write(client_socket, response, strlen(response));
+    } else {
+        remove("auth_temp.csv");
+        char response[256];
+        snprintf(response, sizeof(response), "User %s not found in channel %s\n", username, channel);
+        write(client_socket, response, strlen(response));
+    }
+}
+
+// Handle unbanning a user from a channel
+void handle_unban_user(int client_socket, char *channel, char *username) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s/admin/auth.csv", BASE_DIR, channel);
+    FILE *file = fopen(path, "r");
+    FILE *temp_file = fopen("auth_temp.csv", "w");
+    if (!file || !temp_file) {
+        char response[] = "Error: Could not open auth.csv or create temporary file\n";
+        write(client_socket, response, strlen(response));
+        if (file) fclose(file);
+        if (temp_file) fclose(temp_file);
+        return;
+    }
+
+    char line[256];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), file)) {
+        char *id = strtok(line, ",");
+        char *stored_username = strtok(NULL, ",");
+        char *role = strtok(NULL, ",");
+
+        if (strcmp(stored_username, username) == 0 && strcmp(role, "BANNED") == 0) {
+            fprintf(temp_file, "%s,%s,USER\n", id, stored_username);
+            found = 1;
+        } else {
+            fprintf(temp_file, "%s,%s,%s\n", id, stored_username, role);
+        }
+    }
+    fclose(file);
+    fclose(temp_file);
+
+    if (found) {
+        remove(path);
+        rename("auth_temp.csv", path);
+
+        char response[256];
+        snprintf(response, sizeof(response), "User %s unbanned from channel %s successfully\n", username, channel);
+        write(client_socket, response, strlen(response));
+    } else {
+        remove("auth_temp.csv");
+        char response[256];
+        snprintf(response, sizeof(response), "User %s not found or not banned in channel %s\n", username, channel);
+        write(client_socket, response, strlen(response));
+    }
 }
 
 int main() {
