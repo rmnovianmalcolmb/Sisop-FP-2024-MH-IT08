@@ -11,13 +11,14 @@ int sock = 0;
 char logged_in_user[50] = {0};
 char user_role[10] = {0};
 char current_channel[50] = {0};
+char current_room[50] = {0};
 
 void handle_commands();
 void register_user(char* username, char* password);
 void login_user(char* username, char* password);
 void list_channels();
 void join_channel(char* channel, char* key);
-void join_room(char* room);
+void join_room(char* channel, char* room);
 void send_chat(char* text);
 void see_chat();
 void create_channel(char* channel, char* key);
@@ -27,6 +28,7 @@ void create_room(char* room);
 void edit_room(char* old_room, char* new_room);
 void delete_room(char* room);
 void delete_all_rooms();
+void exit_channel_or_room();
 
 void register_user(char* username, char* password) {
     struct sockaddr_in serv_addr;
@@ -111,7 +113,14 @@ void login_user(char* username, char* password) {
 void handle_commands() {
     char command[256];
     while (1) {
-        printf("[%s/%s] ", logged_in_user, current_channel);
+        if (strlen(current_room) > 0) {
+            printf("[%s/%s/%s] ", logged_in_user, current_channel, current_room);
+        } else if (strlen(current_channel) > 0) {
+            printf("[%s/%s] ", logged_in_user, current_channel);
+        } else {
+            printf("[%s] ", logged_in_user);
+        }
+        
         fgets(command, sizeof(command), stdin);
 
         if (strncmp(command, "QUIT", 4) == 0) {
@@ -126,8 +135,27 @@ void handle_commands() {
             continue;
         }
 
+        if (strncmp(command, "ROOM JOIN ", 10) == 0) {
+            char room[50];
+            sscanf(command + 10, "%s", room);
+            join_room(current_channel, room);
+            continue;
+        }
+
+        if (strncmp(command, "EXIT", 4) == 0) {
+            exit_channel_or_room();
+            continue;
+        }
+
         if (strncmp(command, "LIST CHANNEL", 12) == 0) {
             list_channels();
+            continue;
+        }
+
+        if (strncmp(command, "CREATE ROOM ", 12) == 0) {
+            char room[50];
+            sscanf(command + 12, "%s", room);
+            create_room(room);
             continue;
         }
 
@@ -155,15 +183,19 @@ void join_channel(char* channel, char* key) {
     printf("%s\n", buffer);
     if (strstr(buffer, "Joined channel successfully")) {
         strcpy(current_channel, channel);
+        memset(current_room, 0, sizeof(current_room));
     }
 }
 
-void join_room(char* room) {
+void join_room(char* channel, char* room) {
     char buffer[1024] = {0};
-    sprintf(buffer, "JOIN ROOM %s", room);
+    sprintf(buffer, "ROOM JOIN %s %s", channel, room);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
+    if (strstr(buffer, "Joined room successfully")) {
+        strcpy(current_room, room);
+    }
 }
 
 void send_chat(char* text) {
@@ -208,7 +240,11 @@ void delete_channel(char* channel) {
 
 void create_room(char* room) {
     char buffer[1024] = {0};
-    sprintf(buffer, "CREATE ROOM %s", room);
+    if (strlen(current_channel) == 0) {
+        printf("You need to join a channel first.\n");
+        return;
+    }
+    sprintf(buffer, "CREATE ROOM %s %s", current_channel, room);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
@@ -216,7 +252,11 @@ void create_room(char* room) {
 
 void edit_room(char* old_room, char* new_room) {
     char buffer[1024] = {0};
-    sprintf(buffer, "EDIT ROOM %s TO %s", old_room, new_room);
+    if (strlen(current_channel) == 0) {
+        printf("You need to join a channel first.\n");
+        return;
+    }
+    sprintf(buffer, "EDIT ROOM %s %s %s", current_channel, old_room, new_room);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
@@ -224,7 +264,11 @@ void edit_room(char* old_room, char* new_room) {
 
 void delete_room(char* room) {
     char buffer[1024] = {0};
-    sprintf(buffer, "DEL ROOM %s", room);
+    if (strlen(current_channel) == 0) {
+        printf("You need to join a channel first.\n");
+        return;
+    }
+    sprintf(buffer, "DEL ROOM %s %s", current_channel, room);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
@@ -232,10 +276,35 @@ void delete_room(char* room) {
 
 void delete_all_rooms() {
     char buffer[1024] = {0};
-    strcpy(buffer, "DEL ROOM ALL");
+    if (strlen(current_channel) == 0) {
+        printf("You need to join a channel first.\n");
+        return;
+    }
+    sprintf(buffer, "DEL ROOM ALL %s", current_channel);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
+}
+
+void exit_channel_or_room() {
+    char buffer[1024] = {0};
+    if (strlen(current_room) > 0) {
+        sprintf(buffer, "EXIT %s %s", current_channel, current_room);
+    } else if (strlen(current_channel) > 0) {
+        sprintf(buffer, "EXIT %s", current_channel);
+    } else {
+        strcpy(buffer, "EXIT");
+    }
+    send(sock, buffer, strlen(buffer), 0);
+    read(sock, buffer, 1024);
+    printf("%s\n", buffer);
+
+    if (strstr(buffer, "Left room")) {
+        memset(current_room, 0, sizeof(current_room));
+    } else if (strstr(buffer, "Left channel")) {
+        memset(current_channel, 0, sizeof(current_channel));
+        memset(current_room, 0, sizeof(current_room)); // Clear room as well
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -265,7 +334,7 @@ int main(int argc, char *argv[]) {
         }
         join_channel(argv[2], argv[3]);
     } else if (strcmp(argv[1], "ROOM") == 0 && strcmp(argv[2], "JOIN") == 0) {
-        join_room(argv[3]);
+        join_room(current_channel, argv[3]);
     } else if (strcmp(argv[1], "CHAT") == 0) {
         send_chat(argv[2]);
     } else if (strcmp(argv[1], "SEE") == 0 && strcmp(argv[2], "CHAT") == 0) {
