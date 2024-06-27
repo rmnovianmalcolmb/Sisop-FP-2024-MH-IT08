@@ -94,6 +94,7 @@ void *client_handler(void *socket_desc) {
 
     char current_user[256] = "";
     char current_channel[256] = "";
+    char current_room[256] = "";
 
     while ((read_size = recv(sock, client_message, 2000, 0)) > 0) {
         client_message[read_size] = '\0';
@@ -115,9 +116,16 @@ void *client_handler(void *socket_desc) {
                 handle_list_channels(sock);
             }
         } else if (strcmp(command, "JOIN") == 0) {
-            char *channel = strtok(NULL, " ");
-            handle_join_channel(sock, channel);
-            strncpy(current_channel, channel, sizeof(current_channel));
+            char *first_arg = strtok(NULL, " ");
+            char *second_arg = strtok(NULL, " ");
+            if (second_arg == NULL) {
+                handle_join_room(sock, current_channel, first_arg); // Join room
+                strncpy(current_room, first_arg, sizeof(current_room)); // Update current room
+            } else {
+                handle_join_channel(sock, first_arg); // Join channel
+                strncpy(current_channel, first_arg, sizeof(current_channel));
+                memset(current_room, 0, sizeof(current_room)); // Clear current room
+            }
         } else if (strcmp(command, "EXIT") == 0) {
             char *channel = strtok(NULL, " ");
             char *room = strtok(NULL, " ");
@@ -125,13 +133,6 @@ void *client_handler(void *socket_desc) {
                 handle_exit(sock, NULL, NULL);
             } else {
                 handle_exit(sock, channel, room);
-            }
-        } else if (strcmp(command, "ROOM") == 0) {
-            char *subcommand = strtok(NULL, " ");
-            if (strcmp(subcommand, "JOIN") == 0) {
-                char *channel = strtok(NULL, " ");
-                char *room = strtok(NULL, " ");
-                handle_join_room(sock, channel, room);
             }
         } else if (strcmp(command, "CHAT") == 0) {
             char *text = strtok(NULL, "");
@@ -364,8 +365,18 @@ void handle_create_channel(int client_socket, char *channel, char *key, char *cr
     fclose(auth_file);
 
     char response[256];
-    snprintf(response, sizeof(response), "Channel %s created successfully\n", channel);
+    snprintf(response, sizeof(response), "Channel %s dibuat\n", channel);
     write(client_socket, response, strlen(response));
+}
+
+void trim_newline(char *str) {
+    size_t len = strlen(str);
+    if (len > 0 && (str[len - 1] == '\n' || str[len - 1] == '\r')) {
+        str[len - 1] = '\0';
+        if (len > 1 && str[len - 2] == '\r') {
+            str[len - 2] = '\0';
+        }
+    }
 }
 
 void handle_edit_channel(int client_socket, char *old_channel, char *new_channel) {
@@ -381,6 +392,9 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         return;
     }
 
+    // Trim any newline characters from new_channel
+    trim_newline(new_channel);
+
     char line[256];
     int found = 0;
     int channel_exists = 0;
@@ -394,10 +408,7 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         stored_channel[strcspn(stored_channel, "\n")] = 0;
         key[strcspn(key, "\n")] = 0;
 
-        // Trim any trailing whitespace characters from stored_channel and key
-        strtok(stored_channel, " \n");
-        strtok(key, " \n");
-
+        // Check if the new channel name already exists
         if (strcmp(stored_channel, new_channel) == 0) {
             channel_exists = 1;
             break;
@@ -429,9 +440,6 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         snprintf(old_channel_path, sizeof(old_channel_path), "%s/%s", BASE_DIR, old_channel);
         snprintf(new_channel_path, sizeof(new_channel_path), "%s/%s", BASE_DIR, new_channel);
 
-        // Ensure no newline or space in new_channel_path
-        strtok(new_channel_path, " \n");
-
         if (rename(old_channel_path, new_channel_path) != 0) {
             char response[] = "Error: Could not rename channel directory\n";
             write(client_socket, response, strlen(response));
@@ -439,7 +447,7 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
         }
 
         char response[256];
-        snprintf(response, sizeof(response), "Channel %s berhasil diubah menjadi %s\n", old_channel, new_channel);
+        snprintf(response, sizeof(response), "%s berhasil diubah menjadi %s\n", old_channel, new_channel);
         write(client_socket, response, strlen(response));
     } else {
         remove("channels_temp.csv");
@@ -452,6 +460,7 @@ void handle_edit_channel(int client_socket, char *old_channel, char *new_channel
 void handle_delete_directory(const char *path) {
     DIR *dir = opendir(path);
     if (!dir) {
+        perror("opendir");
         return;
     }
 
@@ -466,11 +475,15 @@ void handle_delete_directory(const char *path) {
             }
             handle_delete_directory(entry_path);
         } else {
-            remove(entry_path);
+            if (remove(entry_path) != 0) {
+                perror("remove");
+            }
         }
     }
     closedir(dir);
-    rmdir(path);
+    if (rmdir(path) != 0) {
+        perror("rmdir");
+    }
 }
 
 void handle_delete_channel(int client_socket, char *channel) {
@@ -486,6 +499,8 @@ void handle_delete_channel(int client_socket, char *channel) {
         return;
     }
 
+    trim_newline(channel);
+
     char line[256];
     int found = 0;
 
@@ -498,6 +513,8 @@ void handle_delete_channel(int client_socket, char *channel) {
         stored_channel[strcspn(stored_channel, "\n")] = 0;
         key[strcspn(key, "\n")] = 0;
 
+        printf("Read channel: %s\n", stored_channel);
+
         if (strcmp(stored_channel, channel) != 0) {
             fprintf(temp_file, "%d,%s,%s\n", id, stored_channel, key);
         } else {
@@ -508,6 +525,7 @@ void handle_delete_channel(int client_socket, char *channel) {
     fclose(temp_file);
 
     if (found) {
+
         if (remove(path) != 0) {
             char response[] = "Error: Could not remove original file\n";
             write(client_socket, response, strlen(response));
@@ -525,15 +543,17 @@ void handle_delete_channel(int client_socket, char *channel) {
         handle_delete_directory(channel_path);
 
         char response[256];
-        snprintf(response, sizeof(response), "Channel %s successfully deleted\n", channel);
+        snprintf(response, sizeof(response), "%s berhasil dihapus\n", channel);
         write(client_socket, response, strlen(response));
     } else {
+        printf("Channel %s not found in the CSV file\n", channel);
         remove("channels_temp.csv");
         char response[256];
         snprintf(response, sizeof(response), "Channel %s not found\n", channel);
         write(client_socket, response, strlen(response));
     }
 }
+
 
 void handle_create_room(int client_socket, char *channel, char *room) {
     char path[512];
@@ -616,13 +636,14 @@ void handle_list_channels(int client_socket) {
     }
 
     char line[256];
-    char response[1024] = "Channels:\n";
+    char response[1024] = "Channels: ";
     while (fgets(line, sizeof(line), file)) {
         char *id = strtok(line, ",");
         char *channel = strtok(NULL, ",");
-        strcat(response, channel);
-        strcat(response, "\n");
+        strcat(response,channel);
+        strcat(response, " ");
     }
+    response[strlen(response) - 1] = '\n'; // Replace the last space with a newline character
 
     write(client_socket, response, strlen(response));
     fclose(file);
@@ -664,7 +685,8 @@ void handle_join_room(int client_socket, char *channel, char *room) {
         char response[] = "Room not found\n";
         write(client_socket, response, strlen(response));
     } else {
-        char response[] = "Joined room successfully\n";
+        char response[256];
+        snprintf(response, sizeof(response), "Joined room successfully\n");
         write(client_socket, response, strlen(response));
     }
 }
