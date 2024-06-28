@@ -18,7 +18,7 @@ void register_user(char* username, char* password);
 void login_user(char* username, char* password);
 void list_channels();
 void join_channel(char* channel, char* key);
-void join_room(char* channel, char* room);
+void join_room(char* room);
 void send_chat(char* text);
 void see_chat();
 void create_channel(char* channel, char* key);
@@ -129,18 +129,20 @@ void handle_commands() {
         }
 
         if (strncmp(command, "JOIN ", 5) == 0) {
-            char channel[50], key[50];
-            sscanf(command + 5, "%s %s", channel, key);
-            join_channel(channel, key);
-            continue;
-        }
-
-        if (strncmp(command, "ROOM JOIN ", 10) == 0) {
+            if (strlen(current_channel) > 0) {
             char room[50];
-            sscanf(command + 10, "%s", room);
-            join_room(current_channel, room);
-            continue;
+            sscanf(command + 5, "%s", room);
+            join_room(room);
+        } else {
+            char channel[50], key[50];
+            sscanf(command + 5, "%s", channel);
+            printf("Key: ");
+            fgets(key, sizeof(key), stdin);
+            key[strcspn(key, "\n")] = 0; // Remove newline character
+            join_channel(channel, key);
         }
+        continue;
+}
 
         if (strncmp(command, "EXIT", 4) == 0) {
             exit_channel_or_room();
@@ -177,19 +179,20 @@ void list_channels() {
 
 void join_channel(char* channel, char* key) {
     char buffer[1024] = {0};
-    sprintf(buffer, "JOIN %s %s", channel, key);
+    char salt[] = "$6$randomsalt$";  // Sama seperti saat pembuatan kunci
+    char *hashed_key = crypt(key, salt);
+    sprintf(buffer, "JOIN %s %s", channel, hashed_key);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
-    printf("%s\n", buffer);
     if (strstr(buffer, "Joined channel successfully")) {
         strcpy(current_channel, channel);
         memset(current_room, 0, sizeof(current_room));
     }
 }
 
-void join_room(char* channel, char* room) {
+void join_room(char* room) {
     char buffer[1024] = {0};
-    sprintf(buffer, "ROOM JOIN %s %s", channel, room);
+    sprintf(buffer, "JOIN %s %s", current_channel, room);
     send(sock, buffer, strlen(buffer), 0);
     read(sock, buffer, 1024);
     printf("%s\n", buffer);
@@ -328,13 +331,11 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(argv[1], "LIST") == 0 && strcmp(argv[2], "CHANNEL") == 0) {
         list_channels();
     } else if (strcmp(argv[1], "JOIN") == 0) {
-        if (argc != 4) {
-            printf("Usage: ./discorit JOIN <channel> <key>\n");
+        if (argc != 3) {
+            printf("Usage: ./discorit JOIN <channel>\n");
             return 1;
         }
         join_channel(argv[2], argv[3]);
-    } else if (strcmp(argv[1], "ROOM") == 0 && strcmp(argv[2], "JOIN") == 0) {
-        join_room(current_channel, argv[3]);
     } else if (strcmp(argv[1], "CHAT") == 0) {
         send_chat(argv[2]);
     } else if (strcmp(argv[1], "SEE") == 0 && strcmp(argv[2], "CHAT") == 0) {
