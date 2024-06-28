@@ -208,6 +208,76 @@ Untuk melihat riwayat obrolan, gunakan perintah `SEE CHAT`:
 ```bash
 ./discorit SEE CHAT
 ```
+# Monitor.c
+
+## Deskripsi
+
+Program ini adalah sebuah monitor chat yang ditulis dalam bahasa C. Program ini menghubungkan ke server chat pada alamat IP lokal (127.0.0.1) di port 8080 dan memonitor pesan pada saluran dan ruang tertentu.
+
+## Struktur Program
+
+Program ini terdiri dari dua fungsi utama:
+1. \`monitor_chat\`: Fungsi ini mengatur koneksi ke server dan memonitor pesan yang diterima.
+2. \`main\`: Fungsi ini memproses argumen yang diberikan melalui command line dan memanggil fungsi \`monitor_chat\`.
+
+### Fungsi \`monitor_chat\`
+
+- Membuat socket untuk koneksi.
+- Mengatur alamat server dan port.
+- Menghubungkan ke server.
+- Mengirimkan perintah "MONITOR" ke server dengan parameter \`username\`, \`channel\`, dan \`room\`.
+- Menerima dan mencetak pesan dari server secara terus-menerus.
+
+### Fungsi \`main\`
+
+- Memeriksa dan memvalidasi argumen yang diberikan.
+- Memanggil fungsi \`monitor_chat\` dengan argumen yang diberikan.
+
+## Cara Kompilasi dan Eksekusi
+
+### Kompilasi
+
+Untuk mengkompilasi program ini, gunakan perintah berikut:
+
+\`\`\`
+gcc -o monitor monitor.c
+\`\`\`
+
+### Eksekusi
+
+Untuk menjalankan program, gunakan perintah berikut:
+
+\`\`\`
+./monitor <username> -channel <channel_name> -room <room_name>
+\`\`\`
+
+Contoh:
+
+\`\`\`
+./monitor user1 -channel general -room main
+\`\`\`
+
+## Keterangan
+
+- \`<username>\`: Nama pengguna yang ingin dimonitor.
+- \`<channel_name>\`: Nama saluran yang ingin dimonitor.
+- \`<room_name>\`: Nama ruang yang ingin dimonitor.
+
+Program ini akan terus berjalan dan mencetak pesan yang diterima dari server sampai dihentikan secara manual.
+
+## Dependencies
+
+- Program ini membutuhkan library standar C: \`stdio.h\`, \`stdlib.h\`, \`string.h\`, \`unistd.h\`, \`arpa/inet.h\`.
+
+## Catatan
+
+- Pastikan server chat berjalan pada alamat IP lokal (127.0.0.1) di port 8080.
+- Program ini belum memiliki mekanisme error handling yang lengkap dan perlu ditingkatkan untuk penggunaan dalam produksi.
+
+EOL
+
+echo "README.md telah dibuat."
+
 
 ## Catatan
 
