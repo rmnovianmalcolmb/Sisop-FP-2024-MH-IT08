@@ -208,6 +208,181 @@ Untuk melihat riwayat obrolan, gunakan perintah `SEE CHAT`:
 ```bash
 ./discorit SEE CHAT
 ```
+
+# server.c
+
+## Penggunaan
+
+### Menjalankan Server
+
+Untuk menjalankan server DiscorIT, cukup jalankan program yang telah dikompilasi:
+
+```bash
+./server
+```
+
+Server akan berjalan sebagai daemon dan akan mendengarkan koneksi pada port 8080.
+
+### Perintah yang Didukung
+
+Server DiscorIT mendukung beberapa perintah yang dapat dikirim oleh klien untuk mengelola pengguna, saluran, dan ruang obrolan. Berikut adalah daftar perintah yang didukung:
+
+#### REGISTER
+
+Mendaftarkan pengguna baru.
+
+```text
+REGISTER <username> <password>
+```
+
+#### LOGIN
+
+Masuk sebagai pengguna yang sudah ada.
+
+```text
+LOGIN <username> <password>
+```
+
+#### LIST CHANNEL
+
+Melihat daftar semua saluran yang tersedia.
+
+```text
+LIST CHANNEL
+```
+
+#### JOIN
+
+Bergabung dengan saluran atau ruang obrolan.
+
+```text
+JOIN <channel> <key>
+JOIN <room>
+```
+
+#### CREATE CHANNEL
+
+Membuat saluran baru dengan kunci.
+
+```text
+CREATE CHANNEL <channel> -k <key>
+```
+
+#### EDIT CHANNEL
+
+Mengedit nama saluran yang ada.
+
+```text
+EDIT CHANNEL <old_channel> TO <new_channel>
+```
+
+#### DEL CHANNEL
+
+Menghapus saluran yang ada.
+
+```text
+DEL CHANNEL <channel>
+```
+
+#### CREATE ROOM
+
+Membuat ruang baru di dalam saluran.
+
+```text
+CREATE ROOM <channel> <room>
+```
+
+#### EDIT ROOM
+
+Mengedit nama ruang yang ada di dalam saluran.
+
+```text
+EDIT ROOM <channel> <old_room> TO <new_room>
+```
+
+#### DEL ROOM
+
+Menghapus ruang yang ada di dalam saluran. Untuk menghapus semua ruang dalam saluran, gunakan `DEL ROOM ALL`.
+
+```text
+DEL ROOM <channel> <room>
+DEL ROOM <channel> ALL
+```
+
+#### CHAT
+
+Mengirim pesan obrolan ke ruang obrolan saat ini.
+
+```text
+CHAT <text>
+```
+
+#### SEE CHAT
+
+Melihat riwayat obrolan di ruang obrolan saat ini.
+
+```text
+SEE CHAT
+```
+
+#### EXIT
+
+Keluar dari ruang obrolan atau saluran saat ini.
+
+```text
+EXIT <channel> <room>
+EXIT
+```
+
+#### REMOVE
+
+Menghapus pengguna dari saluran.
+
+```text
+REMOVE <channel> <username>
+```
+
+#### BAN
+
+Melarang pengguna dari saluran.
+
+```text
+BAN <channel> <username>
+```
+
+#### UNBAN
+
+Mengizinkan kembali pengguna yang dilarang dari saluran.
+
+```text
+UNBAN <channel> <username>
+```
+
+## Struktur Direktori
+
+Server DiscorIT menyimpan data dalam struktur direktori yang terorganisir di dalam folder `DiscorIT`. Berikut adalah struktur direktori dasar:
+
+```
+DiscorIT/
+├── channels.csv
+├── <channel_name>/
+│   ├── admin/
+│   │   ├── auth.csv
+│   │   └── user.log
+│   └── <room_name>/
+│       └── chat.csv
+└── users.csv
+```
+
+- `users.csv`: Menyimpan data pengguna terdaftar.
+- `channels.csv`: Menyimpan data saluran yang ada.
+- `<channel_name>/`: Direktori untuk setiap saluran.
+- `<channel_name>/admin/`: Direktori admin untuk setiap saluran.
+- `<channel_name>/admin/auth.csv`: Menyimpan data otorisasi pengguna untuk saluran.
+- `<channel_name>/admin/user.log`: Menyimpan log pengguna.
+- `<channel_name>/<room_name>/`: Direktori untuk setiap ruang dalam saluran.
+- `<channel_name>/<room_name>/chat.csv`: Menyimpan riwayat obrolan dalam ruang.
+
 # Monitor.c
 
 ## Deskripsi
