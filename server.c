@@ -18,7 +18,7 @@ void *client_handler(void *socket_desc);
 void handle_register(int client_socket, char *username, char *password);
 void handle_login(int client_socket, char *username, char *password);
 void handle_list_channels(int client_socket);
-void handle_join_channel(int client_socket, char *channel);
+void handle_join_channel(int client_socket, char *channel, char *hashed_key);
 void handle_join_room(int client_socket, char *channel, char *room);
 void handle_send_chat(int client_socket, char *text);
 void handle_see_chat(int client_socket);
@@ -118,13 +118,16 @@ void *client_handler(void *socket_desc) {
         } else if (strcmp(command, "JOIN") == 0) {
             char *first_arg = strtok(NULL, " ");
             char *second_arg = strtok(NULL, " ");
-            if (second_arg == NULL) {
-                handle_join_room(sock, current_channel, first_arg); // Join room
-                strncpy(current_room, first_arg, sizeof(current_room)); // Update current room
+            if (strlen(current_channel) > 0){
+                // Handle as room join if second argument is NULL
+                handle_join_room(sock, current_channel, second_arg);
+                strncpy(current_room, first_arg, sizeof(current_room));
             } else {
-                handle_join_channel(sock, first_arg); // Join channel
+                // Handle as channel join if second argument is not NULL
+                handle_join_channel(sock, first_arg, second_arg);
                 strncpy(current_channel, first_arg, sizeof(current_channel));
                 memset(current_room, 0, sizeof(current_room)); // Clear current room
+                second_arg = NULL;
             }
         } else if (strcmp(command, "EXIT") == 0) {
             char *channel = strtok(NULL, " ");
@@ -554,7 +557,6 @@ void handle_delete_channel(int client_socket, char *channel) {
     }
 }
 
-
 void handle_create_room(int client_socket, char *channel, char *room) {
     char path[512];
     snprintf(path, sizeof(path), "%s/%s/%s", BASE_DIR, channel, room);
@@ -649,7 +651,7 @@ void handle_list_channels(int client_socket) {
     fclose(file);
 }
 
-void handle_join_channel(int client_socket, char *channel) {
+void handle_join_channel(int client_socket, char *channel, char *hashed_key) {
     char path[256];
     snprintf(path, sizeof(path), "%s/channels.csv", BASE_DIR);
     FILE *file = fopen(path, "r");
@@ -663,22 +665,23 @@ void handle_join_channel(int client_socket, char *channel) {
     while (fgets(line, sizeof(line), file)) {
         char *id = strtok(line, ",");
         char *channel_name = strtok(NULL, ",");
-
+        char *stored_hashed_key = strtok(NULL, ",");
         if (strcmp(channel_name, channel) == 0) {
             char response[] = "Joined channel successfully\n";
             write(client_socket, response, strlen(response));
-            fclose(file);
             return;
         }
     }
 
-    char response[] = "Channel not found\n";
+    char response[] = "Invalid channel or key\n";
     write(client_socket, response, strlen(response));
     fclose(file);
 }
 
 void handle_join_room(int client_socket, char *channel, char *room) {
     char path[256];
+    trim_newline(channel);
+    trim_newline(room);
     snprintf(path, sizeof(path), "%s/%s/%s", BASE_DIR, channel, room);
     struct stat st = {0};
     if (stat(path, &st) == -1) {
