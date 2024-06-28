@@ -273,14 +273,5 @@ Program ini akan terus berjalan dan mencetak pesan yang diterima dari server sam
 
 - Pastikan server chat berjalan pada alamat IP lokal (127.0.0.1) di port 8080.
 - Program ini belum memiliki mekanisme error handling yang lengkap dan perlu ditingkatkan untuk penggunaan dalam produksi.
-
-EOL
-
-echo "README.md telah dibuat."
-
-
-## Catatan
-
-- Pastikan server berjalan dan dapat diakses di localhost pada port 8080.
 - Perintah harus dimasukkan dengan benar untuk memastikan fungsionalitas yang sesuai.
 
